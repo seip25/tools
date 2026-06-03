@@ -1,0 +1,32 @@
+{
+  "name": "@seip/tools",
+  "version": "0.0.1",
+  "description": "Tools for nextjs , validate, auth,upload",
+  "keywords": [
+    "validate",
+    "auth",
+    "upload",
+    "js",
+    "nextjs"
+  ],
+  "homepage": "https://github.com/seip25/tools#readme",
+  "bugs": {
+    "url": "https://github.com/seip25/tools/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seip25/tools.git"
+  },
+  "license": "MIT",
+  "author": "Seip25",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "xss": "^1.0.15"
+  }
+}
