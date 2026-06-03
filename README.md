@@ -26,6 +26,16 @@ Ensure you have the environment variable `JWT_SECRET` set in your `.env` file:
 JWT_SECRET=your_super_secure_secret_key_here
 ```
 
+### CLI Helper
+Alternatively, you can automatically generate a secure 32-byte secret key and add it to your `.env` file using the package CLI:
+```bash
+npx seip-tools secret
+```
+If `JWT_SECRET` already exists in your `.env` and you want to replace it, run:
+```bash
+npx seip-tools secret --force
+```
+
 ---
 
 ## 1. Validation (`Validator`)
@@ -250,6 +260,56 @@ export async function GET(request) {
     origin: "https://trusted-domain.com",
     methods: "GET,POST"
   });
+}
+```
+
+### Relative Redirects & Rewrites (Edge-Safe)
+In Next.js Middleware, redirecting and rewriting usually requires building full URL paths manually. `Middleware` simplifies this:
+```javascript
+import { Middleware } from "@seip/tools";
+
+export async function middleware(request) {
+  const url = new URL(request.url);
+
+  // Redirect /old-path to /new-path
+  if (url.pathname === "/old-path") {
+    return Middleware.redirect(request, "/new-path", 301);
+  }
+
+  // Transparently rewrite /about internally to /company-about
+  if (url.pathname === "/about") {
+    return Middleware.rewrite(request, "/company-about");
+  }
+}
+```
+
+### SaaS Subdomain Multi-Tenant Rewrite
+Extract the request's subdomain (ignoring localhosts and standard `www` sub-routes) to rewrite traffic internally to tenant folders:
+```javascript
+import { Middleware } from "@seip/tools";
+
+export async function middleware(request) {
+  const subdomain = Middleware.getSubdomain(request); // Returns 'acme' for 'acme.my-saas.com'
+
+  if (subdomain) {
+    // Internally rewrite to /tenants/acme/current-path
+    const path = request.nextUrl.pathname;
+    return Middleware.rewrite(request, `/tenants/${subdomain}${path}`);
+  }
+}
+```
+
+### Geolocation Headers Resolver
+Retrieve verified client country, region, city, and timezones parsed from Vercel or Cloudflare geo headers:
+```javascript
+import { NextResponse } from "next/server";
+import { Middleware } from "@seip/tools";
+
+export async function GET(request) {
+  const geo = Middleware.geolocation(request);
+  
+  // geo = { country: "ES", city: "Madrid", region: "MD", timezone: "Europe/Madrid", ... }
+  return NextResponse.json({ welcomeMessage: `Hello visitor from ${geo.city || "Earth"}!` });
 }
 ```
 

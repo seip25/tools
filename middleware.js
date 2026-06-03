@@ -76,6 +76,101 @@ const Middleware = {
   },
 
   /**
+   * Helper to perform a NextResponse redirect using a relative or absolute path.
+   * @param {Request} request - The NextRequest object.
+   * @param {string} destination - Relative path (e.g. '/login') or absolute URL.
+   * @param {number} [status=307] - Redirect status code.
+   * @returns {Promise<Response>} The NextResponse redirect object.
+   */
+  async redirect(request, destination, status = 307) {
+    const url = new URL(destination, request.url);
+    try {
+      const { NextResponse } = await import("next/server");
+      return NextResponse.redirect(url, status);
+    } catch {
+      return new Response(null, {
+        status,
+        headers: { Location: url.toString() },
+      });
+    }
+  },
+
+  /**
+   * Helper to perform a NextResponse rewrite using a relative or absolute path.
+   * @param {Request} request - The NextRequest object.
+   * @param {string} destination - Relative path (e.g. '/login') or absolute URL.
+   * @returns {Promise<Response>} The NextResponse rewrite object.
+   */
+  async rewrite(request, destination) {
+    const url = new URL(destination, request.url);
+    try {
+      const { NextResponse } = await import("next/server");
+      return NextResponse.rewrite(url);
+    } catch {
+      return new Response(null, {
+        status: 200,
+        headers: { "x-middleware-rewrite": url.toString() },
+      });
+    }
+  },
+
+  /**
+   * Extracts the subdomain from the request host.
+   * Ignores 'www' and local hosts (localhost, 127.0.0.1).
+   * @param {Request} request - The NextRequest object.
+   * @returns {string|null} The extracted subdomain, or null if none.
+   */
+  getSubdomain(request) {
+    if (!request) return null;
+    let host = "";
+    if (typeof request.headers.get === "function") {
+      host = request.headers.get("host") || "";
+    } else if (request.headers) {
+      host = request.headers.host || request.headers.Host || "";
+    }
+
+    const parts = host.split(".");
+    if (parts.length <= 1) return null;
+
+    if (host.includes("localhost") || host.includes("127.0.0.1")) {
+      return null;
+    }
+
+    const subdomain = parts[0];
+    if (subdomain === "www") {
+      return parts[1] && parts.length > 2 ? parts[1] : null;
+    }
+    return subdomain;
+  },
+
+  /**
+   * Retrieves geographic information from request headers (supports Vercel and Cloudflare headers).
+   * @param {Request} request - The NextRequest object.
+   * @returns {Object} Geolocation data (country, region, city, timezone, latitude, longitude).
+   */
+  geolocation(request) {
+    if (!request || !request.headers) {
+      return { country: null, region: null, city: null, timezone: null, latitude: null, longitude: null };
+    }
+
+    const getHeader = (name) => {
+      if (typeof request.headers.get === "function") {
+        return request.headers.get(name);
+      }
+      return request.headers[name] || request.headers[name.toLowerCase()];
+    };
+
+    return {
+      country: getHeader("x-vercel-ip-country") || getHeader("cf-ipcountry") || null,
+      region: getHeader("x-vercel-ip-country-region") || null,
+      city: getHeader("x-vercel-ip-city") || null,
+      timezone: getHeader("x-vercel-ip-timezone") || null,
+      latitude: getHeader("x-vercel-ip-latitude") || null,
+      longitude: getHeader("x-vercel-ip-longitude") || null,
+    };
+  },
+
+  /**
    * Express/Pages Router authentication protection middleware.
    * @type {Function}
    */

@@ -1,6 +1,6 @@
 {
   "name": "@seip/tools",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Tools for nextjs , validate, auth,upload",
   "keywords": [
     "validate",
@@ -20,6 +20,9 @@
   "license": "MIT",
   "author": "Seip25",
   "type": "module",
+  "bin": {
+    "seip-tools": "./bin/cli.js"
+  },
   "main": "index.js",
   "scripts": {
     "test": "node test.js"

@@ -193,6 +193,69 @@ async function runTests() {
   assert.strictEqual(redirectResult, null); 
   console.log("✅ Passed");
 
+  // ----------------------------------------------------
+  // TEST 8: Middleware.redirect & Middleware.rewrite (relative routing)
+  // ----------------------------------------------------
+  console.log("Test 8: Middleware.redirect and Middleware.rewrite...");
+  const mockRouteReq = {
+    url: "https://my-app.com/old-path"
+  };
+
+  const redirectResponse = await Middleware.redirect(mockRouteReq, "/new-path", 301);
+  assert.strictEqual(redirectResponse.status, 301);
+  assert.strictEqual(redirectResponse.headers.get("Location"), "https://my-app.com/new-path");
+
+  const rewriteResponse = await Middleware.rewrite(mockRouteReq, "/rewrite-path");
+  assert.strictEqual(rewriteResponse.status, 200);
+  assert.strictEqual(rewriteResponse.headers.get("x-middleware-rewrite"), "https://my-app.com/rewrite-path");
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 9: Middleware.getSubdomain (SaaS/multi-tenant subdomain helper)
+  // ----------------------------------------------------
+  console.log("Test 9: Middleware.getSubdomain...");
+  const mockTenantReq = {
+    headers: {
+      get: (name) => name === "host" ? "acme.my-platform.com" : null
+    }
+  };
+  const subdomain = Middleware.getSubdomain(mockTenantReq);
+  assert.strictEqual(subdomain, "acme");
+
+  const mockWwwReq = {
+    headers: {
+      get: (name) => name === "host" ? "www.acme.my-platform.com" : null
+    }
+  };
+  const wwwSubdomain = Middleware.getSubdomain(mockWwwReq);
+  assert.strictEqual(wwwSubdomain, "acme");
+
+  const mockLocalReq = {
+    headers: {
+      get: (name) => name === "host" ? "localhost:3000" : null
+    }
+  };
+  assert.strictEqual(Middleware.getSubdomain(mockLocalReq), null);
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 10: Middleware.geolocation (Geo IP location headers)
+  // ----------------------------------------------------
+  console.log("Test 10: Middleware.geolocation...");
+  const mockGeoReq = {
+    headers: {
+      get: (name) => {
+        if (name === "x-vercel-ip-country") return "ES";
+        if (name === "x-vercel-ip-city") return "Madrid";
+        return null;
+      }
+    }
+  };
+  const geoData = Middleware.geolocation(mockGeoReq);
+  assert.strictEqual(geoData.country, "ES");
+  assert.strictEqual(geoData.city, "Madrid");
+  console.log("✅ Passed");
+
   console.log("==================================================");
   console.log("ALL TESTS PASSED SUCCESSFULLY!");
   console.log("==================================================");
