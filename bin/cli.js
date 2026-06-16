@@ -376,15 +376,15 @@ volumes:
   }
 
   const startContent = `#!/bin/bash
-docker compose -f docker/docker-compose.yml up -d
+docker compose -f ./docker-compose.yml up -d
 `;
 
   const stopContent = `#!/bin/bash
-docker compose -f docker/docker-compose.yml down
+docker compose -f ./docker-compose.yml down
 `;
 
   const cleanContent = `#!/bin/bash
-docker compose -f docker/docker-compose.yml down -v
+docker compose -f ./docker-compose.yml down -v
 `;
 
   fs.writeFileSync(composePath, composeContent, "utf8");

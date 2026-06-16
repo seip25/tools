@@ -1,6 +1,6 @@
 {
   "name": "@seip/tools",
-  "version": "0.0.7",
+  "version": "0.0.9",
   "description": "Tools for nextjs , validate, auth,upload",
   "keywords": [
     "validate",
