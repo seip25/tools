@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { Validator, Auth, Upload, Middleware } from "./index.js";
+import { Validator, Auth, Upload, Middleware, Webhook, JsonLd } from "./index.js";
 
 // Helper to mock Web Request object (like NextRequest)
 class MockRequest {
@@ -339,6 +339,80 @@ async function runTests() {
   assert.ok(mockCookieStore14._cookies.auth);
   // Next.js cookie stores should have maxAge scaled to seconds (3600 instead of 3600000)
   assert.strictEqual(mockCookieStore14._options.auth.maxAge, 3600);
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 15: Validator.createSafeAction
+  // ----------------------------------------------------
+  console.log("Test 15: Validator.createSafeAction...");
+  const actionSchema = {
+    title: { required: true, min: 3 },
+    count: { required: true, number: true }
+  };
+  const safeAction = Validator.createSafeAction(actionSchema, async (data) => {
+    return { id: "new-item-123", ...data };
+  });
+
+  const failResult = await safeAction({ title: "Hi", count: "ten" });
+  assert.strictEqual(failResult.success, false);
+  assert.ok(failResult.error);
+  assert.ok(failResult.errors.length > 0);
+
+  const successResult = await safeAction({ title: "New Item", count: "42" });
+  assert.strictEqual(successResult.success, true);
+  assert.strictEqual(successResult.data.id, "new-item-123");
+  assert.strictEqual(successResult.data.title, "New Item");
+  assert.strictEqual(successResult.data.count, 42); // should be casted to number
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 16: Webhook verification
+  // ----------------------------------------------------
+  console.log("Test 16: Webhook verification...");
+  // Test Stripe signature
+  const stripeSecret = "whsec_stripe_test";
+  const stripeTimestamp = "1234567890";
+  const stripeRawBody = JSON.stringify({ event: "charge.succeeded" });
+  const encoder = new TextEncoder();
+  const stripeKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(stripeSecret),
+    { name: "HMAC", hash: { name: "SHA-256" } },
+    false,
+    ["sign"]
+  );
+  const stripeMessage = encoder.encode(`${stripeTimestamp}.${stripeRawBody}`);
+  const stripeSigBuffer = await crypto.subtle.sign("HMAC", stripeKey, stripeMessage);
+  const stripeSigHex = Array.from(new Uint8Array(stripeSigBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  
+  const mockStripeReq = {
+    headers: {
+      get: (name) => name === "stripe-signature" ? `t=${stripeTimestamp},v1=${stripeSigHex}` : null
+    },
+    text: async () => stripeRawBody
+  };
+
+  const isStripeValid = await Webhook.verify(mockStripeReq, stripeSecret, { provider: "stripe" });
+  assert.strictEqual(isStripeValid, true);
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 17: JsonLd Schema Builder
+  // ----------------------------------------------------
+  console.log("Test 17: JsonLd schema builder...");
+  const productLd = JsonLd.product({
+    name: "Smartphone X",
+    image: "https://example.com/phone.jpg",
+    description: "Premium phone",
+    sku: "phone-x-123",
+    price: 999.99,
+    currency: "EUR",
+    inStock: true
+  });
+  assert.strictEqual(productLd["@type"], "Product");
+  assert.strictEqual(productLd.name, "Smartphone X");
+  assert.strictEqual(productLd.offers.price, 999.99);
+  assert.strictEqual(productLd.offers.priceCurrency, "EUR");
   console.log("✅ Passed");
 
   console.log("==================================================");

@@ -22,31 +22,39 @@ npm install @seip/tools
 ```
 
 Ensure you have the environment variable `JWT_SECRET` set in your `.env` file:
+
 ```env
 JWT_SECRET=your_super_secure_secret_key_here
 ```
 
 ### CLI Helper
 
-The package includes a CLI helper to automate session keys and route protection setup.
+The package includes a CLI helper to automate session keys, route protection, Docker db setups, SEO sitemaps, and Nginx deployment.
 
 #### 1. Generate JWT Secret Key
+
 Automatically generate a secure 32-byte secret key and append it to your `.env` file:
+
 ```bash
 npx seip-tools secret
 ```
+
 If `JWT_SECRET` already exists and you want to replace it, run:
+
 ```bash
 npx seip-tools secret --force
 ```
 
 #### 2. Generate Next.js Edge-Compatible Proxy Router & Dictionaries
+
 Generate a zero-dependency, lightweight, Edge-compatible `proxy.js` router in your project root using pure Web Crypto APIs (HMAC-SHA256 signature verification and AES-256-GCM session decryption). This file acts as a standalone route guard that executes seamlessly in Vercel/Next.js Edge Middleware or Edge API routes:
+
 ```bash
 npx seip-tools proxy-auth
 ```
 
 ##### Options & Internationalization (i18n):
+
 - **Customize Routes**: You can customize the dashboard and login routes via CLI options (defaults to `/dashboard` and `/login`):
   ```bash
   npx seip-tools proxy-auth --dashboard /my-dashboard --login /signin
@@ -61,7 +69,9 @@ npx seip-tools proxy-auth
   ```
 
 ##### Next.js Edge Middleware Setup (`middleware.js`):
+
 Reference the generated `proxy` router directly from your Edge middleware file at the project root:
+
 ```javascript
 import { NextResponse } from "next/server";
 import { proxy } from "./proxy";
@@ -71,12 +81,56 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: [
-    // Ignore static files, next assets, and api routes
-    "/((?!_next|api|favicon.ico|.*\\..*).*)"
-  ]
+  matcher: ["/((?!_next|api|favicon.ico|.*\\..*).*)"],
 };
 ```
+
+#### 3. Generate Development Docker Container Setup
+
+Generate a development-ready Docker container configuration for your database (PostgreSQL or MySQL) with ease, allowing you to run a containerized database without installing any database server locally.
+
+```bash
+npx seip-tools docker
+```
+
+To generate MySQL configuration instead of PostgreSQL (which is the default):
+
+```bash
+npx seip-tools docker --db mysql
+```
+
+This command generates a `docker/` directory containing:
+
+- `docker-compose.yml`: Docker configuration with pre-configured secure ports, volumes, and credentials.
+- `start.sh`: Starts the database container in detached background mode.
+- `stop.sh`: Gracefully shuts down the database container.
+- `clean.sh`: Shuts down the container and wipes out all stored database volume data.
+
+#### 4. Generate Next.js Dynamic SEO Templates
+
+Generate dynamic sitemap and robots.txt templates for the Next.js App Router, allowing search engines to discover your multi-language routes easily:
+
+```bash
+npx seip-tools seo
+```
+
+This command generates:
+
+- `app/sitemap.js`: A dynamic sitemap generator that automatically handles localized route patterns.
+- `app/robots.js`: A dynamic robots.txt generator matching Google index regulations.
+
+#### 5. Generate Production VPS Deployment Configs
+
+Generate Nginx server blocks and PM2 cluster configuration templates optimized for deploying Next.js applications onto VPS hosting providers:
+
+```bash
+npx seip-tools deploy --domain my-app.com --port 3000
+```
+
+This command generates:
+
+- `nginx.conf`: Production-ready Nginx configuration block featuring reverse proxy, WebSockets support, Let's Encrypt certificates paths, gzip compression, and body size limits.
+- `ecosystem.config.cjs`: PM2 cluster mode configuration file using maximum CPU core count to run your Next.js application in production mode.
 
 ---
 
@@ -85,23 +139,25 @@ export const config = {
 `Validator` handles schema validation, XSS sanitization, and localization. It detects request shapes and extracts bodies automatically.
 
 ### Rules Schema Example
+
 ```javascript
 const userSchema = {
   email: { required: true, email: true },
   password: { required: true, password: true, min: 6 },
   name: { required: true, min: 3, max: 50 },
-  role: { in: ['admin', 'user', 'guest'] }
+  role: { in: ["admin", "user", "guest"] },
 };
 ```
 
 ### Next.js App Router: Route Handlers (`route.js`)
+
 ```javascript
 import { NextResponse } from "next/server";
 import { Validator } from "@seip/tools";
 
 const schema = {
   email: { required: true, email: true },
-  password: { required: true, min: 6 }
+  password: { required: true, min: 6 },
 };
 
 export async function POST(request) {
@@ -118,6 +174,7 @@ export async function POST(request) {
 ```
 
 ### Next.js App Router: Server Actions & Form Actions
+
 ```javascript
 "use server";
 
@@ -125,7 +182,7 @@ import { Validator } from "@seip/tools";
 
 const contactSchema = {
   name: { required: true, min: 3 },
-  message: { required: true, min: 10 }
+  message: { required: true, min: 10 },
 };
 
 export async function handleContactForm(formData) {
@@ -141,12 +198,37 @@ export async function handleContactForm(formData) {
 }
 ```
 
+### Next.js Server Actions Wrapper (`createSafeAction`)
+
+Simplify your Server Actions by wrapping them. This automatically handles input schema validation, Dynamic Language/Locale parsing (reading `lng` or `lang` cookies), and intercepts uncaught server exceptions, returning a consistent `{ success, data, error, errors }` object to the client:
+
+```javascript
+"use server";
+
+import { Validator } from "@seip/tools";
+
+const schema = {
+  email: { required: true, email: true },
+  age: { required: true, number: true },
+};
+
+export const registerAction = Validator.createSafeAction(
+  schema,
+  async (data) => {
+    // data is type-casted and XSS-sanitized: e.g. data.age is a Number
+    const user = await db.users.create(data);
+    return { id: user.id };
+  },
+);
+```
+
 ### Express / Next.js Pages Router
+
 ```javascript
 import { Validator } from "@seip/tools";
 
 const schema = {
-  email: { required: true, email: true }
+  email: { required: true, email: true },
 };
 
 const validator = new Validator(schema);
@@ -166,11 +248,16 @@ app.post("/api/register", validator.middleware(), (req, res) => {
 It provides environment-aware cookie operations that dynamically import `next/headers` inside Server Components/Actions, or fall back to standard HTTP responses in Pages/Express.
 
 ### User Sessions in Server Actions & API Routes
+
 ```javascript
 import { Auth } from "@seip/tools";
 
 // 1. Create session (sets a secure, HTTP-only, SameSite=Strict cookie)
-await Auth.createSession(null, { userId: 123, role: "admin" }, { expiresIn: "24h" });
+await Auth.createSession(
+  null,
+  { userId: 123, role: "admin" },
+  { expiresIn: "24h" },
+);
 
 // 2. Retrieve session (reads and decrypts cookie payload automatically)
 const session = await Auth.getSession();
@@ -183,6 +270,7 @@ await Auth.destroySession();
 ```
 
 ### Protecting Next.js Server Components (`page.js` / `layout.js`)
+
 ```javascript
 import { redirect } from "next/navigation";
 import { Auth } from "@seip/tools";
@@ -204,6 +292,7 @@ export default async function DashboardLayout({ children }) {
 ```
 
 ### Cryptographic Helpers
+
 ```javascript
 import { Auth } from "@seip/tools";
 
@@ -221,6 +310,7 @@ const payload = Auth.verifyToken(token, "optional_custom_secret");
 `Upload` provides native file parsing for Next.js App Router requests, plus standard Multer options for Express and Pages Router.
 
 ### Native Next.js App Router Route Handlers (`route.js`)
+
 Files are parsed, validated, and stored inside the `public/` directory (defaults to `public/uploads`). This makes uploaded files instantly hosted and publicly accessible at `/uploads/filename`.
 
 ```javascript
@@ -229,30 +319,36 @@ import { Upload } from "@seip/tools";
 
 export async function POST(request) {
   const result = await Upload.handleNextUpload(request, {
-    folder: "avatars",                // saved under public/avatars/
-    fieldName: "image",               // form-data file key
-    fileSize: 3 * 1024 * 1024,        // 3MB max size
-    allowedTypes: ["image/png", "image/jpeg"]
+    folder: "avatars", // saved under public/avatars/
+    fieldName: "image", // form-data file key
+    fileSize: 3 * 1024 * 1024, // 3MB max size
+    allowedTypes: ["image/png", "image/jpeg"],
+    generateBlurPlaceholder: true, // Generates an 8x8 base64 blurDataURL (requires 'sharp')
   });
 
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  // Returns upload metadata
+  // Returns upload metadata:
   // result.url: "/avatars/1726038491823-938210398.png"
-  return NextResponse.json({ url: result.url });
+  // result.blurDataURL: "data:image/png;base64,..."
+  return NextResponse.json({
+    url: result.url,
+    blurDataURL: result.blurDataURL,
+  });
 }
 ```
 
 ### Express & Pages Router Uploads (Multer)
+
 ```javascript
 import { Upload } from "@seip/tools";
 
 const uploader = Upload.disk({
   folder: "uploads",
   fileSize: 5000000,
-  allowedTypes: ["image/png", "image/jpeg"]
+  allowedTypes: ["image/png", "image/jpeg"],
 });
 
 // Use as Express middleware
@@ -268,6 +364,7 @@ app.post("/api/upload", uploader.single("file"), (req, res) => {
 Utilities to streamline cross-origin settings and Edge Middleware validation.
 
 ### Next.js Edge Middleware (`middleware.js`)
+
 Next.js Edge Middleware runs in a V8 Edge Runtime. Use the lightweight check helper to inspect cookie existence and redirect.
 
 ```javascript
@@ -276,37 +373,44 @@ import { Middleware } from "@seip/tools";
 
 export async function middleware(request) {
   // If the 'auth' cookie does not exist, redirect to '/login'
-  const redirectResponse = await Middleware.authRedirect(request, "/login", "auth");
+  const redirectResponse = await Middleware.authRedirect(
+    request,
+    "/login",
+    "auth",
+  );
   if (redirectResponse) {
     return redirectResponse;
   }
-  
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*"]
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
 };
 ```
 
 ### CORS Helper inside Route Handlers
+
 ```javascript
 import { NextResponse } from "next/server";
 import { Middleware } from "@seip/tools";
 
 export async function GET(request) {
   const response = NextResponse.json({ data: "Hello World" });
-  
+
   // Appends Access-Control-Allow-Origin: * and standard headers
   return Middleware.cors(response, {
     origin: "https://trusted-domain.com",
-    methods: "GET,POST"
+    methods: "GET,POST",
   });
 }
 ```
 
 ### Relative Redirects & Rewrites (Edge-Safe)
+
 In Next.js Middleware, redirecting and rewriting usually requires building full URL paths manually. `Middleware` simplifies this:
+
 ```javascript
 import { Middleware } from "@seip/tools";
 
@@ -326,7 +430,9 @@ export async function middleware(request) {
 ```
 
 ### SaaS Subdomain Multi-Tenant Rewrite
+
 Extract the request's subdomain (ignoring localhosts and standard `www` sub-routes) to rewrite traffic internally to tenant folders:
+
 ```javascript
 import { Middleware } from "@seip/tools";
 
@@ -342,16 +448,82 @@ export async function middleware(request) {
 ```
 
 ### Geolocation Headers Resolver
+
 Retrieve verified client country, region, city, and timezones parsed from Vercel or Cloudflare geo headers:
+
 ```javascript
 import { NextResponse } from "next/server";
 import { Middleware } from "@seip/tools";
 
 export async function GET(request) {
   const geo = Middleware.geolocation(request);
-  
+
   // geo = { country: "ES", city: "Madrid", region: "MD", timezone: "Europe/Madrid", ... }
-  return NextResponse.json({ welcomeMessage: `Hello visitor from ${geo.city || "Earth"}!` });
+  return NextResponse.json({
+    welcomeMessage: `Hello visitor from ${geo.city || "Earth"}!`,
+  });
+}
+```
+
+---
+
+## 5. Webhook Signature Verification (`Webhook`)
+
+Verify incoming webhooks safely. `Webhook` clones the request stream so you can parse the body separately, is compatible with Edge/Serverless runtimes, and protects against timing attacks.
+
+```javascript
+import { NextResponse } from "next/server";
+import { Webhook } from "@seip/tools";
+
+export async function POST(request) {
+  // Supports 'stripe', 'clerk' (Svix), or 'generic' HMAC verification
+  const isValid = await Webhook.verify(
+    request,
+    process.env.STRIPE_WEBHOOK_SECRET,
+    {
+      provider: "stripe",
+    },
+  );
+
+  if (!isValid) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  const payload = await request.json(); // Safe to read again after verification!
+  // Process webhook...
+  return NextResponse.json({ received: true });
+}
+```
+
+---
+
+## 6. Structured SEO Schema Builder (`JsonLd`)
+
+Generate SEO structured JSON-LD schemas easily inside your Server Components to boost Google search engine visibility:
+
+```javascript
+import { JsonLd } from "@seip/tools";
+
+export default function CoursePage() {
+  const schema = JsonLd.product({
+    name: "Premium Next.js Course",
+    image: "https://example.com/logo.jpg",
+    description: "Master Next.js App Router",
+    sku: "course-next-1",
+    price: 49.99,
+    currency: "USD",
+    inStock: true,
+  });
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
+      <h1>Next.js Course</h1>
+    </>
+  );
 }
 ```
 
@@ -359,28 +531,29 @@ export async function GET(request) {
 
 ## Validation Schema Reference
 
-| Rule | Description | Example |
-|------|-------------|---------|
-| `required` | Field must not be undefined, null, or empty string. | `{ required: true }` |
-| `min` | Minimum character length. | `{ min: 6 }` |
-| `max` | Maximum character length. | `{ max: 50 }` |
-| `email` | Valid email regex check. | `{ email: true }` |
-| `number` | Numeric value. | `{ number: true }` |
-| `alpha` | Only letters (`a-z`, `A-Z`). | `{ alpha: true }` |
-| `alphanumeric` | Letters and numbers only. | `{ alphanumeric: true }` |
-| `boolean` | Checks for `true`, `false`, `"true"`, or `"false"`. | `{ boolean: true }` |
-| `date` | Valid ISO 8601 date parse. | `{ date: true }` |
-| `url` | Valid URL format. | `{ url: true }` |
-| `in` | Value must be inside specified array. | `{ in: ['admin', 'user'] }` |
-| `equals` | Strict equivalence check. | `{ equals: "confirm" }` |
-| `password` | Requires uppercase, lowercase, numbers, and minimum 6 characters. | `{ password: true }` |
-| `pattern` | Custom RegExp pattern match. | `{ pattern: /^[A-Z]{3}-\d{3}$/ }` |
+| Rule           | Description                                                       | Example                           |
+| -------------- | ----------------------------------------------------------------- | --------------------------------- |
+| `required`     | Field must not be undefined, null, or empty string.               | `{ required: true }`              |
+| `min`          | Minimum character length.                                         | `{ min: 6 }`                      |
+| `max`          | Maximum character length.                                         | `{ max: 50 }`                     |
+| `email`        | Valid email regex check.                                          | `{ email: true }`                 |
+| `number`       | Numeric value.                                                    | `{ number: true }`                |
+| `alpha`        | Only letters (`a-z`, `A-Z`).                                      | `{ alpha: true }`                 |
+| `alphanumeric` | Letters and numbers only.                                         | `{ alphanumeric: true }`          |
+| `boolean`      | Checks for `true`, `false`, `"true"`, or `"false"`.               | `{ boolean: true }`               |
+| `date`         | Valid ISO 8601 date parse.                                        | `{ date: true }`                  |
+| `url`          | Valid URL format.                                                 | `{ url: true }`                   |
+| `in`           | Value must be inside specified array.                             | `{ in: ['admin', 'user'] }`       |
+| `equals`       | Strict equivalence check.                                         | `{ equals: "confirm" }`           |
+| `password`     | Requires uppercase, lowercase, numbers, and minimum 6 characters. | `{ password: true }`              |
+| `pattern`      | Custom RegExp pattern match.                                      | `{ pattern: /^[A-Z]{3}-\d{3}$/ }` |
 
 ---
 
 ## Run Unit Tests
 
 Ensure dependencies are installed and run the test script:
+
 ```bash
 npm install
 npm test

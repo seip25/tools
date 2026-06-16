@@ -424,6 +424,52 @@ class Validator {
 
     return obj;
   }
+
+  /**
+   * Creates a safe Server Action wrapper that validates input, handles errors, and returns a consistent response.
+   * @param {Object} schema - Validation schema rules.
+   * @param {Function} handler - The handler function containing Server Action logic.
+   * @returns {Function} An asynchronous function representing the safe Server Action.
+   */
+  static createSafeAction(schema, handler) {
+    const validator = new Validator(schema);
+    return async (...args) => {
+      const input = args[0];
+      let lang = null;
+      try {
+        const { cookies } = await import("next/headers");
+        const cookieStore = await cookies();
+        lang = cookieStore.get("lng")?.value || cookieStore.get("lang")?.value || null;
+      } catch {}
+
+      const actionValidator = new Validator(schema, lang);
+      const result = await actionValidator.validate(input);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.message.join(", "),
+          errors: result.errors,
+        };
+      }
+
+      try {
+        const actionResult = await handler(result.data, ...args.slice(1));
+        return {
+          success: true,
+          data: actionResult,
+          error: null,
+          errors: []
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: err.message || "An unexpected error occurred",
+          errors: []
+        };
+      }
+    };
+  }
 }
 
 export default Validator;

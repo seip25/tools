@@ -106,6 +106,17 @@ class Upload {
 
       const fileUrl = `/${folder}/${filename}`;
 
+      let blurDataURL = null;
+      if (options.generateBlurPlaceholder && file.type.startsWith("image/")) {
+        try {
+          const sharp = (await import("sharp")).default;
+          const resizedBuffer = await sharp(buffer)
+            .resize(8, 8)
+            .toBuffer();
+          blurDataURL = `data:${file.type};base64,${resizedBuffer.toString("base64")}`;
+        } catch {}
+      }
+
       return {
         success: true,
         filename,
@@ -114,6 +125,7 @@ class Upload {
         size: file.size,
         url: fileUrl,
         path: filePath,
+        blurDataURL,
       };
     } catch (err) {
       return { success: false, error: err.message };

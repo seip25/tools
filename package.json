@@ -1,6 +1,6 @@
 {
   "name": "@seip/tools",
-  "version": "0.0.4",
+  "version": "0.0.7",
   "description": "Tools for nextjs , validate, auth,upload",
   "keywords": [
     "validate",
@@ -30,7 +30,9 @@
     "./validate": "./validate.js",
     "./auth": "./auth.js",
     "./upload": "./upload.js",
-    "./middleware": "./middleware.js"
+    "./middleware": "./middleware.js",
+    "./webhook": "./webhook.js",
+    "./seo": "./seo.js"
   },
   "scripts": {
     "test": "node test.js"
