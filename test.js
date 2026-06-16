@@ -126,10 +126,10 @@ async function runTests() {
   console.log("Test 4: JWT & AES-256-GCM Encryption/Decryption...");
   process.env.JWT_SECRET = "super_secret_key_for_testing";
   const userPayload = { userId: 42, role: "admin" };
-  const token = Auth.generateToken(userPayload);
+  const token = await Auth.generateToken(userPayload);
   assert.ok(token);
 
-  const decoded = Auth.verifyToken(token);
+  const decoded = await Auth.verifyToken(token);
   assert.deepStrictEqual(decoded, userPayload);
   console.log("✅ Passed");
 
@@ -254,6 +254,91 @@ async function runTests() {
   const geoData = Middleware.geolocation(mockGeoReq);
   assert.strictEqual(geoData.country, "ES");
   assert.strictEqual(geoData.city, "Madrid");
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 11: Validator output data & XSS sanitization & mass assignment filter
+  // ----------------------------------------------------
+  console.log("Test 11: Validator data output, XSS sanitization, and mass-assignment filtering...");
+  const dirtyData = {
+    email: "clean@example.com",
+    password: "Password123",
+    name: "John <script>alert('xss')</script> Doe",
+    age: "25",
+    isAdmin: true // extra field not in schema
+  };
+  const result11 = await validator.validate(dirtyData);
+  assert.strictEqual(result11.success, true);
+  assert.ok(result11.data);
+  // Must sanitize XSS
+  assert.strictEqual(result11.data.name, "John &lt;script&gt;alert('xss')&lt;/script&gt; Doe");
+  // Must filter out unvalidated fields
+  assert.strictEqual(result11.data.isAdmin, undefined);
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 12: Validator type casting
+  // ----------------------------------------------------
+  console.log("Test 12: Validator automatic type-casting (numbers & booleans)...");
+  const castSchema = {
+    isActive: { required: true, boolean: true },
+    score: { required: true, number: true },
+    name: { required: true }
+  };
+  const castValidator = new Validator(castSchema);
+  const rawInput = {
+    isActive: "true",
+    score: "99.5",
+    name: "Alex"
+  };
+  const result12 = await castValidator.validate(rawInput);
+  assert.strictEqual(result12.success, true);
+  assert.strictEqual(result12.data.isActive, true);
+  assert.strictEqual(result12.data.score, 99.5);
+  assert.strictEqual(result12.data.name, "Alex");
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 13: Subdomain edge-cases
+  // ----------------------------------------------------
+  console.log("Test 13: Middleware.getSubdomain edge cases (IPs, root domains, multi-part TLDs)...");
+  
+  const testSubdomain = (hostHeader) => {
+    return Middleware.getSubdomain({
+      headers: { get: (name) => name === "host" ? hostHeader : null }
+    });
+  };
+
+  assert.strictEqual(testSubdomain("my-platform.com"), null);
+  assert.strictEqual(testSubdomain("www.my-platform.com"), null);
+  assert.strictEqual(testSubdomain("acme.my-platform.com"), "acme");
+  assert.strictEqual(testSubdomain("www.acme.my-platform.com"), "acme");
+  assert.strictEqual(testSubdomain("192.168.1.1:3000"), null);
+  assert.strictEqual(testSubdomain("acme.my-platform.co.uk"), "acme");
+  assert.strictEqual(testSubdomain("my-platform.co.uk"), null);
+  assert.strictEqual(testSubdomain("www.acme.my-platform.co.uk"), "acme");
+  console.log("✅ Passed");
+
+  // ----------------------------------------------------
+  // TEST 14: Auth createSession with numeric expiresIn
+  // ----------------------------------------------------
+  console.log("Test 14: Auth session creation with numeric expiresIn & maxAge conversion...");
+  const mockCookieStore14 = {
+    _cookies: {},
+    _options: {},
+    get(name) {
+      return this._cookies[name] ? { value: this._cookies[name] } : null;
+    },
+    set(name, value, options) {
+      this._cookies[name] = value;
+      this._options[name] = options;
+    }
+  };
+  // 3600 seconds as numeric expiresIn
+  await Auth.createSession(mockCookieStore14, { id: 1 }, { expiresIn: 3600 });
+  assert.ok(mockCookieStore14._cookies.auth);
+  // Next.js cookie stores should have maxAge scaled to seconds (3600 instead of 3600000)
+  assert.strictEqual(mockCookieStore14._options.auth.maxAge, 3600);
   console.log("✅ Passed");
 
   console.log("==================================================");

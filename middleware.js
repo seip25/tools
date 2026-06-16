@@ -1,4 +1,3 @@
-import Auth from "./auth.js";
 
 /**
  * Common middleware helpers for Next.js App Router (Edge & Node runtime) and standard Node/Express.
@@ -22,9 +21,19 @@ const Middleware = {
       "Access-Control-Max-Age": options.maxAge || "86400",
     };
 
-    if (response && response.headers && typeof response.headers.set === "function") {
-      for (const [key, value] of Object.entries(corsHeaders)) {
-        response.headers.set(key, value);
+    if (response) {
+      if (response.headers && typeof response.headers.set === "function") {
+        for (const [key, value] of Object.entries(corsHeaders)) {
+          response.headers.set(key, value);
+        }
+      } else if (typeof response.setHeader === "function") {
+        for (const [key, value] of Object.entries(corsHeaders)) {
+          response.setHeader(key, value);
+        }
+      } else if (typeof response.set === "function") {
+        for (const [key, value] of Object.entries(corsHeaders)) {
+          response.set(key, value);
+        }
       }
     }
 
@@ -68,7 +77,7 @@ const Middleware = {
         const { NextResponse } = await import("next/server");
         return NextResponse.redirect(new URL(redirectUrl, request.url));
       } catch {
-        // Fallback if next/server is not available in environment
+
       }
     }
 
@@ -129,18 +138,35 @@ const Middleware = {
       host = request.headers.host || request.headers.Host || "";
     }
 
-    const parts = host.split(".");
-    if (parts.length <= 1) return null;
+    const hostName = host.split(":")[0].trim();
+    if (!hostName) return null;
 
-    if (host.includes("localhost") || host.includes("127.0.0.1")) {
+    const isIP = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostName) || hostName.includes("::") || hostName === "localhost";
+    if (isIP) {
       return null;
     }
 
-    const subdomain = parts[0];
-    if (subdomain === "www") {
-      return parts[1] && parts.length > 2 ? parts[1] : null;
+    const parts = hostName.split(".");
+    if (parts.length <= 1) return null;
+
+    const lastPart = parts[parts.length - 1];
+    const secondLastPart = parts[parts.length - 2];
+    const isMultiPartTld =
+      lastPart.length === 2 &&
+      ["co", "com", "net", "org", "gov", "edu"].includes(secondLastPart);
+
+    const rootDomainLength = isMultiPartTld ? 3 : 2;
+
+    if (parts.length <= rootDomainLength) {
+      return null;
     }
-    return subdomain;
+
+    const subdomainParts = parts.slice(0, -rootDomainLength);
+    if (subdomainParts[0] === "www") {
+      subdomainParts.shift();
+    }
+
+    return subdomainParts.length > 0 ? subdomainParts.join(".") : null;
   },
 
   /**
@@ -174,13 +200,21 @@ const Middleware = {
    * Express/Pages Router authentication protection middleware.
    * @type {Function}
    */
-  expressAuth: Auth.protect(),
+  expressAuth: (req, res, next) => {
+    import("./auth.js")
+      .then((m) => m.default.protect()(req, res, next))
+      .catch(next);
+  },
 
   /**
    * Express/Pages Router web authentication protection middleware (redirects to "/" if unauthorized).
    * @type {Function}
    */
-  expressWebAuth: Auth.protect({ redirect: "/" }),
+  expressWebAuth: (req, res, next) => {
+    import("./auth.js")
+      .then((m) => m.default.protect({ redirect: "/" })(req, res, next))
+      .catch(next);
+  },
 
   /**
    * Simple logging middleware compatible with Express/Pages Router.

@@ -1,5 +1,35 @@
-import jwt from "jsonwebtoken";
-import crypto from "node:crypto";
+/**
+ * Converts a Uint8Array to a base64url string.
+ * @param {Uint8Array} bytes - The byte array.
+ * @returns {string} The base64url string.
+ */
+function bytesToBase64url(bytes) {
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+/**
+ * Converts a base64url string to a Uint8Array.
+ * @param {string} base64url - The base64url string.
+ * @returns {Uint8Array} The byte array.
+ */
+function base64urlToBytes(base64url) {
+  let base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 /**
  * Authentication and session management helper class utilizing JWT and AES-256-GCM encryption.
@@ -9,38 +39,96 @@ class Auth {
    * Encrypts a payload using AES-256-GCM.
    * @param {Object} payload - The data to encrypt.
    * @param {string} secret - The secret key for encryption.
-   * @returns {string} The encrypted string in format iv:tag:encrypted.
+   * @returns {Promise<string>} The encrypted string in format iv:tag:encrypted.
    */
-  static encrypt(payload, secret) {
-    const iv = crypto.randomBytes(12);
-    const key = crypto.createHash("sha256").update(secret).digest();
-    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-    let encrypted = cipher.update(JSON.stringify(payload), "utf8", "hex");
-    encrypted += cipher.final("hex");
-    const tag = cipher.getAuthTag().toString("hex");
-    return `${iv.toString("hex")}:${tag}:${encrypted}`;
+  static async encrypt(payload, secret) {
+    const encoder = new TextEncoder();
+    const secretBytes = encoder.encode(secret);
+    const keyHash = await crypto.subtle.digest("SHA-256", secretBytes);
+
+    const aesKey = await crypto.subtle.importKey(
+      "raw",
+      keyHash,
+      { name: "AES-GCM" },
+      false,
+      ["encrypt"]
+    );
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const dataBytes = encoder.encode(JSON.stringify(payload));
+
+    const encryptedBuffer = await crypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv: iv,
+        tagLength: 128
+      },
+      aesKey,
+      dataBytes
+    );
+
+    const encryptedBytes = new Uint8Array(encryptedBuffer);
+    const ciphertext = encryptedBytes.slice(0, -16);
+    const tag = encryptedBytes.slice(-16);
+
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, "0")).join("");
+    const tagHex = Array.from(tag).map(b => b.toString(16).padStart(2, "0")).join("");
+    const ciphertextHex = Array.from(ciphertext).map(b => b.toString(16).padStart(2, "0")).join("");
+
+    return `${ivHex}:${tagHex}:${ciphertextHex}`;
   }
 
   /**
    * Decrypts a payload using AES-256-GCM.
    * @param {string} data - The encrypted string in format iv:tag:encrypted.
    * @param {string} secret - The secret key for decryption.
-   * @returns {Object|null} The decrypted object or null if failed.
+   * @returns {Promise<Object|null>} The decrypted object or null if failed.
    */
-  static decrypt(data, secret) {
+  static async decrypt(data, secret) {
     try {
       const [ivHex, tagHex, encryptedHex] = data.split(":");
       if (!ivHex || !tagHex || !encryptedHex) return null;
 
-      const iv = Buffer.from(ivHex, "hex");
-      const tag = Buffer.from(tagHex, "hex");
-      const key = crypto.createHash("sha256").update(secret).digest();
-      const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-      decipher.setAuthTag(tag);
+      const hexToBytes = (hex) => {
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+          bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+      };
 
-      let decrypted = decipher.update(encryptedHex, "hex", "utf8");
-      decrypted += decipher.final("utf8");
-      return JSON.parse(decrypted);
+      const iv = hexToBytes(ivHex);
+      const tag = hexToBytes(tagHex);
+      const encrypted = hexToBytes(encryptedHex);
+
+      const ciphertextWithTag = new Uint8Array(encrypted.length + tag.length);
+      ciphertextWithTag.set(encrypted);
+      ciphertextWithTag.set(tag, encrypted.length);
+
+      const encoder = new TextEncoder();
+      const secretBytes = encoder.encode(secret);
+      const keyHash = await crypto.subtle.digest("SHA-256", secretBytes);
+
+      const aesKey = await crypto.subtle.importKey(
+        "raw",
+        keyHash,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"]
+      );
+
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: iv,
+          tagLength: 128
+        },
+        aesKey,
+        ciphertextWithTag
+      );
+
+      const decryptedText = new TextDecoder().decode(decryptedBuffer);
+      return JSON.parse(decryptedText);
     } catch {
       return null;
     }
@@ -67,27 +155,107 @@ class Auth {
    * Generates an encrypted JWT token.
    * @param {Object} payload - The data to store in the token.
    * @param {string} [secret] - The secret key for JWT signing.
-   * @param {string} [expiresIn="24h"] - Token expiration time.
-   * @returns {string} The generated token.
+   * @param {string|number} [expiresIn="24h"] - Token expiration time.
+   * @returns {Promise<string>} The generated token.
    */
-  static generateToken(payload, secret = null, expiresIn = "24h") {
+  static async generateToken(payload, secret = null, expiresIn = "24h") {
     const resolvedSecret = Auth._resolveSecret(secret);
-    const encrypted = Auth.encrypt(payload, resolvedSecret);
-    return jwt.sign({ data: encrypted }, resolvedSecret, { expiresIn });
+    const encrypted = await Auth.encrypt(payload, resolvedSecret);
+
+    let seconds = 24 * 60 * 60;
+    if (typeof expiresIn === "number") {
+      seconds = expiresIn;
+    } else if (typeof expiresIn === "string") {
+      if (expiresIn.endsWith("h")) {
+        seconds = parseInt(expiresIn) * 60 * 60;
+      } else if (expiresIn.endsWith("d")) {
+        seconds = parseInt(expiresIn) * 24 * 60 * 60;
+      } else if (expiresIn.endsWith("m")) {
+        seconds = parseInt(expiresIn) * 60;
+      } else if (expiresIn.endsWith("s")) {
+        seconds = parseInt(expiresIn);
+      }
+    }
+
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + seconds;
+
+    const jwtPayload = {
+      data: encrypted,
+      iat,
+      exp
+    };
+
+    const header = { alg: "HS256", typ: "JWT" };
+    const encoder = new TextEncoder();
+    
+    const headerB64 = bytesToBase64url(encoder.encode(JSON.stringify(header)));
+    const payloadB64 = bytesToBase64url(encoder.encode(JSON.stringify(jwtPayload)));
+    const messageBytes = encoder.encode(`${headerB64}.${payloadB64}`);
+
+    const keyData = encoder.encode(resolvedSecret);
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: { name: "SHA-256" } },
+      false,
+      ["sign"]
+    );
+
+    const signatureBuffer = await crypto.subtle.sign(
+      "HMAC",
+      cryptoKey,
+      messageBytes
+    );
+    const signatureB64 = bytesToBase64url(new Uint8Array(signatureBuffer));
+
+    return `${headerB64}.${payloadB64}.${signatureB64}`;
   }
 
   /**
    * Verifies and decrypts a JWT token.
    * @param {string} token - The token to verify.
    * @param {string} [secret] - The secret key.
-   * @returns {Object|null} The decoded and decrypted payload or null if invalid.
+   * @returns {Promise<Object|null>} The decoded and decrypted payload or null if invalid.
    */
-  static verifyToken(token, secret = null) {
+  static async verifyToken(token, secret = null) {
+    if (!token || typeof token !== "string") return null;
     const resolvedSecret = Auth._resolveSecret(secret);
     try {
-      const decoded = jwt.verify(token, resolvedSecret);
-      if (!decoded || !decoded.data) return null;
-      return Auth.decrypt(decoded.data, resolvedSecret);
+      const parts = token.split(".");
+      if (parts.length !== 3) return null;
+
+      const [headerB64, payloadB64, signatureB64] = parts;
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(resolvedSecret);
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        keyData,
+        { name: "HMAC", hash: { name: "SHA-256" } },
+        false,
+        ["verify"]
+      );
+
+      const signatureBytes = base64urlToBytes(signatureB64);
+      const messageBytes = encoder.encode(`${headerB64}.${payloadB64}`);
+      const isValid = await crypto.subtle.verify(
+        "HMAC",
+        cryptoKey,
+        signatureBytes,
+        messageBytes
+      );
+
+      if (!isValid) return null;
+
+      const payloadText = new TextDecoder().decode(base64urlToBytes(payloadB64));
+      const decoded = JSON.parse(payloadText);
+
+      if (decoded.exp && Date.now() / 1000 > decoded.exp) {
+        return null;
+      }
+
+      if (!decoded.data) return null;
+      return await Auth.decrypt(decoded.data, resolvedSecret);
     } catch {
       return null;
     }
@@ -160,7 +328,7 @@ class Auth {
     if (resOrCookies) {
       if (typeof resOrCookies.set === "function") {
         const nextOptions = { ...finalOptions };
-        if (nextOptions.maxAge && nextOptions.maxAge > 100000) {
+        if (nextOptions.maxAge !== undefined) {
           nextOptions.maxAge = Math.floor(nextOptions.maxAge / 1000);
         }
         resOrCookies.set(name, value, nextOptions);
@@ -176,7 +344,7 @@ class Auth {
       const { cookies } = await import("next/headers");
       const cookieStore = await cookies();
       const nextOptions = { ...finalOptions };
-      if (nextOptions.maxAge && nextOptions.maxAge > 100000) {
+      if (nextOptions.maxAge !== undefined) {
         nextOptions.maxAge = Math.floor(nextOptions.maxAge / 1000);
       }
       cookieStore.set(name, value, nextOptions);
@@ -233,17 +401,21 @@ class Auth {
    */
   static async createSession(resOrCookies = null, payload, options = {}) {
     const { key = "auth", expiresIn = "24h", cookie = {} } = options;
-    const token = Auth.generateToken(payload, null, expiresIn);
+    const token = await Auth.generateToken(payload, null, expiresIn);
     
     let maxAge = 24 * 60 * 60 * 1000;
-    if (expiresIn.endsWith("h")) {
-      maxAge = parseInt(expiresIn) * 60 * 60 * 1000;
-    } else if (expiresIn.endsWith("d")) {
-      maxAge = parseInt(expiresIn) * 24 * 60 * 60 * 1000;
-    } else if (expiresIn.endsWith("m")) {
-      maxAge = parseInt(expiresIn) * 60 * 1000;
-    } else if (expiresIn.endsWith("s")) {
-      maxAge = parseInt(expiresIn) * 1000;
+    if (typeof expiresIn === "number") {
+      maxAge = expiresIn * 1000;
+    } else if (typeof expiresIn === "string") {
+      if (expiresIn.endsWith("h")) {
+        maxAge = parseInt(expiresIn) * 60 * 60 * 1000;
+      } else if (expiresIn.endsWith("d")) {
+        maxAge = parseInt(expiresIn) * 24 * 60 * 60 * 1000;
+      } else if (expiresIn.endsWith("m")) {
+        maxAge = parseInt(expiresIn) * 60 * 1000;
+      } else if (expiresIn.endsWith("s")) {
+        maxAge = parseInt(expiresIn) * 1000;
+      }
     }
 
     await Auth.setCookie(resOrCookies, key, token, { maxAge, ...cookie });
@@ -259,7 +431,7 @@ class Auth {
   static async getSession(reqOrCookies = null, key = "auth") {
     const token = await Auth.getCookie(reqOrCookies, key);
     if (!token) return null;
-    return Auth.verifyToken(token);
+    return await Auth.verifyToken(token);
   }
 
   /**
@@ -284,7 +456,16 @@ class Auth {
     const { redirect = null, key = "user", cookieKey = "auth" } = options;
 
     return async (req, res, next) => {
-      const token = (await Auth.getCookie(req, cookieKey)) || req.headers?.authorization?.split(" ")[1];
+      let token = await Auth.getCookie(req, cookieKey);
+      if (!token && req.headers) {
+        const authHeader = typeof req.headers.get === "function"
+          ? req.headers.get("authorization")
+          : req.headers.authorization || req.headers.Authorization;
+        if (authHeader) {
+          token = authHeader.split(" ")[1];
+        }
+      }
+
       const isJson =
         req.headers?.["content-type"] === "application/json" ||
         (req.headers?.get && req.headers.get("content-type") === "application/json");
@@ -294,7 +475,7 @@ class Auth {
         return isJson ? res.status(401).json({ message: "Unauthorized" }) : res.status(401).end();
       }
 
-      const decoded = Auth.verifyToken(token);
+      const decoded = await Auth.verifyToken(token);
       if (!decoded) {
         if (redirect && !isJson) return res.redirect(redirect);
         return isJson ? res.status(401).json({ message: "Unauthorized" }) : res.status(401).end();

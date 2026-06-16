@@ -171,20 +171,24 @@ class Validator {
           if (cookieHeader) {
             const match = cookieHeader.match(/(?:^|;\s*)lang=([^;]*)/);
             if (match) {
-              lang = decodeURIComponent(match[1]);
+              lang = decodeURIComponent(match[1]).trim().toLowerCase();
             }
           }
 
           if (!lang && acceptHeader) {
-            lang = acceptHeader.split(",")[0].split("-")[0];
+            lang = acceptHeader.split(",")[0].split("-")[0].trim().toLowerCase();
           }
+        }
+
+        if (!lang && typeof input.lang === "string") {
+          lang = input.lang;
         }
 
         if (!lang && input.session && input.session.lang) {
           lang = input.session.lang;
         }
 
-        lang = lang || "es";
+        lang = lang ? lang.trim().toLowerCase() : "es";
       }
 
       if (typeof input.clone === "function") {
@@ -220,6 +224,7 @@ class Validator {
 
     for (const [field, config] of Object.entries(this.schema)) {
       let value = body[field];
+      let hasError = false;
 
       if (config.xss !== false && typeof value === "string") {
         body[field] = xss(value);
@@ -238,67 +243,95 @@ class Validator {
           const errorMsg = config.messages?.min || msg.min(field, config.min);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.max !== undefined && !validators.isLength(value, { max: config.max })) {
           const errorMsg = config.messages?.max || msg.max(field, config.max);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.email && !validators.isEmail(value)) {
           const errorMsg = config.messages?.email || msg.email(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.number && !validators.isNumeric(value)) {
           const errorMsg = config.messages?.number || msg.number(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.alpha && !validators.isAlpha(value)) {
           const errorMsg = config.messages?.alpha || msg.alpha(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.alphanumeric && !validators.isAlphanumeric(value)) {
           const errorMsg = config.messages?.alphanumeric || msg.alphanumeric(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.boolean && !validators.isBoolean(value)) {
           const errorMsg = config.messages?.boolean || msg.boolean(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.date && !validators.isISO8601(value)) {
           const errorMsg = config.messages?.date || msg.date(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.url && !validators.isURL(value)) {
           const errorMsg = config.messages?.url || msg.url(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.in && !validators.isIn(value, config.in)) {
           const errorMsg = config.messages?.in || msg.in(field, config.in);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.equals !== undefined && !validators.equals(value, config.equals)) {
           const errorMsg = config.messages?.equals || msg.equals(field, config.equals);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.password && !validators.matches(value, /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{6,}$/)) {
           const errorMsg = config.messages?.password || msg.password(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
         if (config.pattern && !validators.matches(value, config.pattern)) {
           const errorMsg = config.messages?.pattern || msg.pattern(field);
           messages.push(errorMsg);
           errors.push({ field, message: errorMsg });
+          hasError = true;
         }
+
+        if (!hasError) {
+          if (config.number) {
+            body[field] = Number(value);
+          } else if (config.boolean) {
+            body[field] = value === true || value === "true";
+          }
+        }
+      }
+    }
+
+    const validatedData = {};
+    for (const field of Object.keys(this.schema)) {
+      if (body[field] !== undefined) {
+        validatedData[field] = body[field];
       }
     }
 
@@ -308,6 +341,7 @@ class Validator {
         error: true,
         errors,
         message: messages,
+        data: validatedData,
       };
     }
 
@@ -316,6 +350,7 @@ class Validator {
       error: false,
       errors: [],
       message: [],
+      data: validatedData,
     };
   }
 

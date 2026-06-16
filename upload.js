@@ -97,7 +97,9 @@ class Upload {
       }
 
       const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const filename = uniqueSuffix + path.extname(file.name);
+      const originalName = file.name || "";
+      const ext = originalName.includes(".") ? path.extname(originalName) : "";
+      const filename = uniqueSuffix + ext;
       const filePath = path.join(destDir, filename);
 
       await fs.promises.writeFile(filePath, buffer);

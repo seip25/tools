@@ -1,6 +1,6 @@
 {
   "name": "@seip/tools",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Tools for nextjs , validate, auth,upload",
   "keywords": [
     "validate",
@@ -24,11 +24,18 @@
     "seip-tools": "./bin/cli.js"
   },
   "main": "index.js",
+  "sideEffects": false,
+  "exports": {
+    ".": "./index.js",
+    "./validate": "./validate.js",
+    "./auth": "./auth.js",
+    "./upload": "./upload.js",
+    "./middleware": "./middleware.js"
+  },
   "scripts": {
     "test": "node test.js"
   },
   "dependencies": {
-    "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "xss": "^1.0.15"
   }
