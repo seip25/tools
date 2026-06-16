@@ -40,18 +40,28 @@ If `JWT_SECRET` already exists and you want to replace it, run:
 npx seip-tools secret --force
 ```
 
-#### 2. Generate Next.js Edge-Compatible Proxy Router
+#### 2. Generate Next.js Edge-Compatible Proxy Router & Dictionaries
 Generate a zero-dependency, lightweight, Edge-compatible `proxy.js` router in your project root using pure Web Crypto APIs (HMAC-SHA256 signature verification and AES-256-GCM session decryption). This file acts as a standalone route guard that executes seamlessly in Vercel/Next.js Edge Middleware or Edge API routes:
 ```bash
 npx seip-tools proxy-auth
 ```
 
-You can customize the dashboard and login routes via CLI options (defaults to `/dashboard` and `/login`):
-```bash
-npx seip-tools proxy-auth --dashboard /my-dashboard --login /signin
-```
+##### Options & Internationalization (i18n):
+- **Customize Routes**: You can customize the dashboard and login routes via CLI options (defaults to `/dashboard` and `/login`):
+  ```bash
+  npx seip-tools proxy-auth --dashboard /my-dashboard --login /signin
+  ```
+- **Combined Auth & i18n Routing**: Automatically configure route auth checks AND locale/path redirection (English & Spanish), plus generate i18n translation assets (`lib/dictionaries.js`, `dictionaries/en.json`, `dictionaries/es.json`):
+  ```bash
+  npx seip-tools proxy-auth --i18n
+  ```
+- **i18n-Only Routing**: Generate only the locale/path redirection proxy and translation assets without auth checks:
+  ```bash
+  npx seip-tools proxy-auth --i18n-only
+  ```
 
-Then, you can reference it directly from your Next.js Edge Middleware (`middleware.js`):
+##### Next.js Edge Middleware Setup (`middleware.js`):
+Reference the generated `proxy` router directly from your Edge middleware file at the project root:
 ```javascript
 import { NextResponse } from "next/server";
 import { proxy } from "./proxy";
@@ -61,7 +71,10 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login/:path*"]
+  matcher: [
+    // Ignore static files, next assets, and api routes
+    "/((?!_next|api|favicon.ico|.*\\..*).*)"
+  ]
 };
 ```
 
